@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import { Users, Plus, Pencil, HandCoins, NotebookText, Tags } from 'lucide-react';
+import { Users, Plus, Pencil, HandCoins, NotebookText, Tags, KeyRound, BadgeCheck, Clock } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { bn, taka, todayStr, CUSTOMER_TYPES, CUSTOMER_TYPE_LABEL } from '@/lib/utils';
 import {
   PageHeader, Card, CardContent, Button, Input, Field, Select, Switch, Badge, Textarea,
@@ -12,15 +13,18 @@ import {
   Dialog, DialogContent, DialogClose,
 } from '@/components/ui';
 
-const emptyForm = { name: '', type: 'shop', phone: '', address: '', note: '' };
+const emptyForm = { name: '', type: 'shop', phone: '', address: '', note: '', password: '' };
 const typeTone = { shop: 'leaf', factory: 'ghee', individual: 'stone' };
 
 export default function CustomersPage() {
+  const { isAdmin } = useAuth();
   const [customers, setCustomers] = useState(null);
   const [products, setProducts] = useState([]);
   const [editTarget, setEditTarget] = useState(null); // null | 'new' | customer
   const [payTarget, setPayTarget] = useState(null);
   const [rateTarget, setRateTarget] = useState(null);
+  const [pwTarget, setPwTarget] = useState(null);
+  const [pwValue, setPwValue] = useState('');
   const [form, setForm] = useState(emptyForm);
   const [pay, setPay] = useState({ date: todayStr(), amount: '', note: '' });
   const [rateMap, setRateMap] = useState({});
@@ -123,15 +127,46 @@ export default function CustomersPage() {
     }
   };
 
+  const toggleApprove = async (c) => {
+    try {
+      const res = await api(`/customers/${c._id}/approve`, { method: 'POST' });
+      setCustomers((list) => list.map((x) => (x._id === c._id ? { ...x, approved: res.approved } : x)));
+      toast.success(res.approved ? `${c.name} অনুমোদিত হলো` : `${c.name}-এর অনুমোদন বাতিল`);
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  const openPw = (c) => {
+    setPwValue('');
+    setPwTarget(c);
+  };
+  const savePw = async () => {
+    setBusy(true);
+    try {
+      const res = await api(`/customers/${pwTarget._id}/password`, { method: 'PUT', body: { password: pwValue } });
+      toast.success(res.created ? 'লগইন তৈরি হয়েছে' : 'পাসওয়ার্ড পরিবর্তন হয়েছে');
+      setPwTarget(null);
+      load();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!customers) return <PageLoader />;
 
   const totalDue = customers.reduce((s, c) => s + c.due, 0);
+  const pendingCount = customers.filter((c) => c.hasLogin && !c.approved).length;
 
   return (
     <div>
       <PageHeader
         title="কাস্টমার"
-        desc={`মোট ${bn(customers.length)} জন · সব মিলিয়ে পাবো ${taka(totalDue)}`}
+        desc={`মোট ${bn(customers.length)} জন · সব মিলিয়ে পাবো ${taka(totalDue)}${
+          pendingCount > 0 ? ` · ${bn(pendingCount)} জন অনুমোদনের অপেক্ষায়` : ''
+        }`}
       >
         <Button onClick={openNew} className="gap-2">
           <Plus className="h-4 w-4" />
@@ -154,6 +189,7 @@ export default function CustomersPage() {
                   <TH className="text-right">মোট বিক্রি</TH>
                   <TH className="text-right">জমা</TH>
                   <TH className="text-right">বাকি (পাবো)</TH>
+                  {isAdmin && <TH>লগইন</TH>}
                   <TH>চালু</TH>
                   <TH className="text-right">অ্যাকশন</TH>
                 </tr>
@@ -173,6 +209,21 @@ export default function CustomersPage() {
                     <TD className="num text-right">
                       {c.due > 0 ? <span className="font-semibold text-rose-600">{taka(c.due)}</span> : '—'}
                     </TD>
+                    {isAdmin && (
+                      <TD>
+                        {c.hasLogin ? (
+                          <button onClick={() => toggleApprove(c)} title="ক্লিক করে অনুমোদন টগল করুন">
+                            {c.approved ? (
+                              <Badge tone="leaf"><BadgeCheck className="h-3 w-3" /> অনুমোদিত</Badge>
+                            ) : (
+                              <Badge tone="ghee"><Clock className="h-3 w-3" /> অপেক্ষমাণ</Badge>
+                            )}
+                          </button>
+                        ) : (
+                          <span className="text-[11px] text-stone-400">লগইন নেই</span>
+                        )}
+                      </TD>
+                    )}
                     <TD>
                       <Switch checked={c.active} onChange={(v) => toggleActive(c, v)} />
                     </TD>
@@ -182,9 +233,16 @@ export default function CustomersPage() {
                           <HandCoins className="h-3.5 w-3.5" />
                           টাকা নিন
                         </Button>
-                        <Button variant="ghost" size="icon" onClick={() => openRates(c)} title="বিশেষ রেট">
-                          <Tags className="h-4 w-4" />
-                        </Button>
+                        {isAdmin && (
+                          <Button variant="ghost" size="icon" onClick={() => openRates(c)} title="বিশেষ রেট">
+                            <Tags className="h-4 w-4" />
+                          </Button>
+                        )}
+                        {isAdmin && (
+                          <Button variant="ghost" size="icon" onClick={() => openPw(c)} title="লগইন / পাসওয়ার্ড">
+                            <KeyRound className="h-4 w-4" />
+                          </Button>
+                        )}
                         <Link href={`/ledger/customer/${c._id}`}>
                           <Button variant="ghost" size="icon" title="খাতা">
                             <NotebookText className="h-4 w-4" />
@@ -230,6 +288,16 @@ export default function CustomersPage() {
             <Field label="নোট (ঐচ্ছিক)">
               <Textarea value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} />
             </Field>
+            {editTarget === 'new' && isAdmin && (
+              <Field label="লগইন পাসওয়ার্ড (ঐচ্ছিক — দিলে কাস্টমার অ্যাপ থেকে অর্ডার করতে পারবে)">
+                <Input
+                  type="text"
+                  placeholder="কমপক্ষে ৬ অক্ষর · মোবাইল নম্বর লাগবে"
+                  value={form.password}
+                  onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                />
+              </Field>
+            )}
             <div className="flex justify-end gap-2">
               <DialogClose asChild>
                 <Button variant="ghost">বাতিল</Button>
@@ -308,6 +376,37 @@ export default function CustomersPage() {
               </DialogClose>
               <Button onClick={saveRates} loading={busy}>
                 রেট সেভ করুন
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* login / password dialog */}
+      <Dialog open={!!pwTarget} onOpenChange={(o) => !o && setPwTarget(null)}>
+        <DialogContent
+          title={`${pwTarget?.name || ''} — লগইন / পাসওয়ার্ড`}
+          description={
+            pwTarget?.hasLogin
+              ? `নতুন পাসওয়ার্ড দিন (বর্তমান পাসওয়ার্ড লাগবে না)। লগইন: ${pwTarget?.loginPhone || ''}`
+              : `এই কাস্টমারের মোবাইল নম্বর (${pwTarget?.phone || '—'}) দিয়ে নতুন লগইন তৈরি হবে।`
+          }
+        >
+          <div className="space-y-4">
+            <Field label="পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)">
+              <Input
+                type="text"
+                value={pwValue}
+                onChange={(e) => setPwValue(e.target.value)}
+                placeholder="নতুন পাসওয়ার্ড"
+              />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <DialogClose asChild>
+                <Button variant="ghost">বাতিল</Button>
+              </DialogClose>
+              <Button onClick={savePw} loading={busy} disabled={pwValue.length < 6}>
+                {pwTarget?.hasLogin ? 'পাসওয়ার্ড পরিবর্তন' : 'লগইন তৈরি করুন'}
               </Button>
             </div>
           </div>

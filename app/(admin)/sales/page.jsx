@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Banknote, Plus, Trash2, Save } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { bn, taka, rateFor, SHIFT_LABEL, todayStr } from '@/lib/utils';
 import {
   PageHeader, Card, CardHeader, CardTitle, CardContent, Button, Input, Select, Field,
@@ -14,9 +15,11 @@ import {
 const itemsSummary = (items = []) =>
   items.map((i) => `${i.name} ${bn(i.quantity)} ${i.unit}`).join(', ') || '—';
 
-const emptyItem = () => ({ product: '', quantity: '', rate: '' });
+const emptyItem = () => ({ product: '', quantity: '', unit: '', rate: '' });
+const unitsOf = (p) => (p?.unitOptions?.length ? p.unitOptions : p ? [p.unit] : []);
 
 export default function SalesPage() {
+  const { user, isAdmin, isEmployee } = useAuth();
   const [date, setDate] = useState(todayStr());
   const [shift, setShift] = useState('morning');
   const [sellerKey, setSellerKey] = useState('owner');
@@ -35,14 +38,24 @@ export default function SalesPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    Promise.all([api('/customers'), api('/employees'), api('/products')])
-      .then(([c, e, p]) => {
+    Promise.all([api('/customers'), api('/products')])
+      .then(([c, p]) => {
         setCustomers(c.filter((x) => x.active));
-        setEmployees(e.filter((x) => x.active));
         setProducts(p.filter((x) => x.active));
       })
       .catch((err) => toast.error(err.message));
-  }, []);
+    // employees list (for the seller dropdown) is admin-only
+    if (isAdmin) {
+      api('/employees')
+        .then((e) => setEmployees(e.filter((x) => x.active)))
+        .catch(() => {});
+    }
+  }, [isAdmin]);
+
+  // an employee only ever sells as themselves
+  useEffect(() => {
+    if (isEmployee && user?.employee) setSellerKey(String(user.employee));
+  }, [isEmployee, user]);
 
   const loadDay = (d) =>
     api(`/sales?date=${d}`)
@@ -126,6 +139,7 @@ export default function SalesPage() {
         if (key === 'product') {
           const p = products.find((x) => x._id === value);
           next.rate = p ? rateFor(formCustomer, p._id, p.defaultRate) : '';
+          next.unit = p ? unitsOf(p)[0] : '';
         }
         return next;
       });
@@ -149,7 +163,7 @@ export default function SalesPage() {
           customer: form.customer,
           items: form.items
             .filter((it) => it.product && Number(it.quantity) > 0)
-            .map((it) => ({ product: it.product, quantity: Number(it.quantity), rate: Number(it.rate) || undefined })),
+            .map((it) => ({ product: it.product, quantity: Number(it.quantity), unit: it.unit || undefined, rate: Number(it.rate) || undefined })),
           paid: Number(form.paid) || 0,
           note: form.note,
         },
@@ -186,14 +200,18 @@ export default function SalesPage() {
     <div>
       <PageHeader title="বিক্রি" desc="দ্রুত গ্রিডে দিনের দুধ-বিক্রি, আর আলাদা ফর্মে দই-পনির-ঘি">
         <DayShiftPicker date={date} onDate={setDate} shift={shift} onShift={setShift} />
-        <Select value={sellerKey} onChange={(e) => setSellerKey(e.target.value)} className="w-auto min-w-[140px]">
-          <option value="owner">বিক্রেতা: মালিক</option>
-          {employees.map((e) => (
-            <option key={e._id} value={e._id}>
-              বিক্রেতা: {e.name}
-            </option>
-          ))}
-        </Select>
+        {isEmployee ? (
+          <Badge tone="leaf" className="h-9 px-3">বিক্রেতা: {user?.name}</Badge>
+        ) : (
+          <Select value={sellerKey} onChange={(e) => setSellerKey(e.target.value)} className="w-auto min-w-[140px]">
+            <option value="owner">বিক্রেতা: মালিক</option>
+            {employees.map((e) => (
+              <option key={e._id} value={e._id}>
+                বিক্রেতা: {e.name}
+              </option>
+            ))}
+          </Select>
+        )}
       </PageHeader>
 
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -226,8 +244,11 @@ export default function SalesPage() {
               </Field>
 
               <div className="space-y-2">
-                {form.items.map((it, idx) => (
-                  <div key={idx} className="grid grid-cols-[1fr_84px_92px_36px] items-end gap-2">
+                {form.items.map((it, idx) => {
+                  const ip = products.find((x) => x._id === it.product);
+                  const iunits = unitsOf(ip);
+                  return (
+                  <div key={idx} className="grid grid-cols-[1fr_70px_84px_84px_36px] items-end gap-2">
                     <Field label={idx === 0 ? 'পণ্য' : undefined}>
                       <Select value={it.product} onChange={(e) => setItem(idx, 'product', e.target.value)}>
                         <option value="">— পণ্য —</option>
@@ -247,6 +268,19 @@ export default function SalesPage() {
                         value={it.quantity}
                         onChange={(e) => setItem(idx, 'quantity', e.target.value)}
                       />
+                    </Field>
+                    <Field label={idx === 0 ? 'একক' : undefined}>
+                      <Select
+                        value={it.unit}
+                        onChange={(e) => setItem(idx, 'unit', e.target.value)}
+                        disabled={!it.product}
+                        className="px-2"
+                      >
+                        {iunits.length === 0 && <option value="">—</option>}
+                        {iunits.map((u) => (
+                          <option key={u} value={u}>{u}</option>
+                        ))}
+                      </Select>
                     </Field>
                     <Field label={idx === 0 ? 'দর (৳)' : undefined}>
                       <Input
@@ -270,7 +304,8 @@ export default function SalesPage() {
                       <Trash2 className="h-4 w-4" />
                     </Button>
                   </div>
-                ))}
+                  );
+                })}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -444,9 +479,11 @@ export default function SalesPage() {
                         {s.due > 0 ? <span className="font-semibold text-rose-600">{taka(s.due)}</span> : '—'}
                       </TD>
                       <TD>
-                        <Button variant="dangerGhost" size="icon" onClick={() => removeSale(s._id)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        {isAdmin && (
+                          <Button variant="dangerGhost" size="icon" onClick={() => removeSale(s._id)}>
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
                       </TD>
                     </TR>
                   ))}

@@ -46,8 +46,14 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const isAdmin = user?.role === 'admin';
+  const isEmployee = user?.role === 'employee';
+  const isStaff = isAdmin || isEmployee; // can run admin-side daily operations
+
   return (
-    <AuthContext.Provider value={{ user, loading, refresh, login, register, logout }}>
+    <AuthContext.Provider
+      value={{ user, loading, refresh, login, register, logout, isAdmin, isEmployee, isStaff }}
+    >
       {children}
     </AuthContext.Provider>
   );

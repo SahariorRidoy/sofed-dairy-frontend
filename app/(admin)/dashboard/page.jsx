@@ -10,19 +10,21 @@ import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { api } from '@/lib/api';
-import { bn, taka, bnDate } from '@/lib/utils';
-import { PageHeader, StatCard, Card, CardHeader, CardTitle, CardContent, PageLoader, Button } from '@/components/ui';
+import { bn, taka, bnDate, todayStr } from '@/lib/utils';
+import { PageHeader, StatCard, Card, CardHeader, CardTitle, CardContent, PageLoader, Button, Input } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const [date, setDate] = useState(todayStr());
   const [data, setData] = useState(null);
 
   useEffect(() => {
-    api('/reports/dashboard')
+    setData(null);
+    api(`/reports/dashboard?date=${date}`)
       .then(setData)
       .catch((err) => toast.error(err.message));
-  }, []);
+  }, [date]);
 
   if (!data) return <PageLoader />;
 
@@ -35,10 +37,14 @@ export default function DashboardPage() {
     <div>
       <PageHeader
         title={`শুভদিন, ${user?.name || ''}!`}
-        desc={`${bnDate(data.today)} — আজকের এক নজরে হিসাব`}
+        desc={`${bnDate(data.today)} — এক নজরে হিসাব`}
       >
-        <Link href="/collections"><Button variant="outline">দুধ সংগ্রহ লিখুন</Button></Link>
-        <Link href="/sales"><Button>আজকের বিক্রি লিখুন</Button></Link>
+        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-auto" />
+        {date !== todayStr() && (
+          <Button variant="ghost" size="sm" onClick={() => setDate(todayStr())}>আজ</Button>
+        )}
+        <Link href="/collections"><Button variant="outline">দুধ সংগ্রহ</Button></Link>
+        <Link href="/sales"><Button>বিক্রি</Button></Link>
       </PageHeader>
 
       {data.pendingOrders > 0 && (

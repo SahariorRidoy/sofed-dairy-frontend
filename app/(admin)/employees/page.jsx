@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { UserCog, Plus, Pencil, Wallet } from 'lucide-react';
+import { UserCog, Plus, Pencil, Wallet, KeyRound } from 'lucide-react';
 import { api } from '@/lib/api';
 import { bn, taka, todayStr, bnDate, SHIFT_LABEL } from '@/lib/utils';
 import {
@@ -11,12 +11,14 @@ import {
   Dialog, DialogContent, DialogClose,
 } from '@/components/ui';
 
-const emptyForm = { name: '', phone: '', address: '', note: '' };
+const emptyForm = { name: '', phone: '', address: '', note: '', password: '' };
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState(null);
   const [editTarget, setEditTarget] = useState(null); // null | 'new' | employee
   const [accTarget, setAccTarget] = useState(null); // employee
+  const [pwTarget, setPwTarget] = useState(null);
+  const [pwValue, setPwValue] = useState('');
   const [form, setForm] = useState(emptyForm);
   const [busy, setBusy] = useState(false);
 
@@ -86,6 +88,24 @@ export default function EmployeesPage() {
     }
   };
 
+  const openPw = (e) => {
+    setPwValue('');
+    setPwTarget(e);
+  };
+  const savePw = async () => {
+    setBusy(true);
+    try {
+      const res = await api(`/employees/${pwTarget._id}/password`, { method: 'PUT', body: { password: pwValue } });
+      toast.success(res.created ? 'লগইন তৈরি হয়েছে' : 'পাসওয়ার্ড পরিবর্তন হয়েছে');
+      setPwTarget(null);
+      load();
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const saveDeposit = async () => {
     setBusy(true);
     try {
@@ -138,6 +158,13 @@ export default function EmployeesPage() {
                 <div>
                   <p className="font-display text-lg text-leaf-900">{e.name}</p>
                   {e.phone && <p className="text-xs text-stone-400">{e.phone}</p>}
+                  <div className="mt-1">
+                    {e.hasLogin ? (
+                      <Badge tone="leaf">লগইন আছে</Badge>
+                    ) : (
+                      <Badge tone="stone">লগইন নেই</Badge>
+                    )}
+                  </div>
                 </div>
                 <Switch checked={e.active} onChange={(v) => toggleActive(e, v)} />
               </div>
@@ -154,7 +181,10 @@ export default function EmployeesPage() {
                   <Wallet className="h-3.5 w-3.5" />
                   হিসাব ও জমা
                 </Button>
-                <Button variant="ghost" size="icon" onClick={() => openEdit(e)}>
+                <Button variant="ghost" size="icon" onClick={() => openPw(e)} title="লগইন / পাসওয়ার্ড">
+                  <KeyRound className="h-4 w-4" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => openEdit(e)} title="এডিট">
                   <Pencil className="h-4 w-4" />
                 </Button>
               </div>
@@ -181,12 +211,53 @@ export default function EmployeesPage() {
             <Field label="নোট (ঐচ্ছিক)">
               <Input value={form.note} onChange={(e) => setForm((f) => ({ ...f, note: e.target.value }))} />
             </Field>
+            {editTarget === 'new' && (
+              <Field label="লগইন পাসওয়ার্ড (ঐচ্ছিক — দিলে কর্মচারী লগইন করে কাজ করতে পারবে)">
+                <Input
+                  type="text"
+                  placeholder="কমপক্ষে ৬ অক্ষর · মোবাইল নম্বর লাগবে"
+                  value={form.password}
+                  onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                />
+              </Field>
+            )}
             <div className="flex justify-end gap-2">
               <DialogClose asChild>
                 <Button variant="ghost">বাতিল</Button>
               </DialogClose>
               <Button onClick={saveEmployee} loading={busy} disabled={!form.name}>
                 সেভ করুন
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* login / password dialog */}
+      <Dialog open={!!pwTarget} onOpenChange={(o) => !o && setPwTarget(null)}>
+        <DialogContent
+          title={`${pwTarget?.name || ''} — লগইন / পাসওয়ার্ড`}
+          description={
+            pwTarget?.hasLogin
+              ? `নতুন পাসওয়ার্ড দিন (বর্তমান পাসওয়ার্ড লাগবে না)। লগইন: ${pwTarget?.loginPhone || ''}`
+              : `এই কর্মচারীর মোবাইল নম্বর (${pwTarget?.phone || '—'}) দিয়ে নতুন লগইন তৈরি হবে।`
+          }
+        >
+          <div className="space-y-4">
+            <Field label="পাসওয়ার্ড (কমপক্ষে ৬ অক্ষর)">
+              <Input
+                type="text"
+                value={pwValue}
+                onChange={(e) => setPwValue(e.target.value)}
+                placeholder="নতুন পাসওয়ার্ড"
+              />
+            </Field>
+            <div className="flex justify-end gap-2">
+              <DialogClose asChild>
+                <Button variant="ghost">বাতিল</Button>
+              </DialogClose>
+              <Button onClick={savePw} loading={busy} disabled={pwValue.length < 6}>
+                {pwTarget?.hasLogin ? 'পাসওয়ার্ড পরিবর্তন' : 'লগইন তৈরি করুন'}
               </Button>
             </div>
           </div>

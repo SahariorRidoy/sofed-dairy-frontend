@@ -2,8 +2,8 @@
 
 import * as React from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { X, Sun, Sunset, Loader2 } from 'lucide-react';
-import { cn, SHIFTS } from '@/lib/utils';
+import { X, Sun, Sunset, Loader2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { cn, SHIFTS, bn } from '@/lib/utils';
 
 /* ------------------------------- Button -------------------------------- */
 const buttonVariants = {
@@ -311,6 +311,29 @@ export function EmptyState({ icon: Icon, title, desc, children }) {
 
 export function Spinner({ className }) {
   return <Loader2 className={cn('h-5 w-5 animate-spin text-leaf-600', className)} />;
+}
+
+/* ------------------------------ Pagination ----------------------------- */
+export function Pagination({ page, pages, total, onPage, className }) {
+  if (!pages || pages <= 1) return null;
+  return (
+    <div className={cn('flex items-center justify-between gap-3 pt-4', className)}>
+      <p className="text-xs text-stone-500">
+        পৃষ্ঠা {bn(page)} / {bn(pages)}
+        {total != null && <span className="text-stone-400"> · মোট {bn(total)}টি</span>}
+      </p>
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" className="gap-1" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+          <ChevronLeft className="h-4 w-4" />
+          আগের
+        </Button>
+        <Button variant="outline" size="sm" className="gap-1" disabled={page >= pages} onClick={() => onPage(page + 1)}>
+          পরের
+          <ChevronRight className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 export function PageLoader({ label = 'লোড হচ্ছে…' }) {

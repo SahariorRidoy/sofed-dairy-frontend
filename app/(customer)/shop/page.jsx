@@ -3,20 +3,21 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
-import { Store, Plus, Minus, ShoppingBag } from 'lucide-react';
+import { Store, Plus, Minus, ShoppingBag, Clock } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { bn, taka } from '@/lib/utils';
 import {
-  PageHeader, Card, Button, Input, Field, Textarea, PageLoader, EmptyState,
+  PageHeader, Card, Button, Input, Field, Select, Textarea, PageLoader, EmptyState,
   Dialog, DialogContent, DialogClose,
 } from '@/components/ui';
 
 export default function ShopPage() {
   const { user } = useAuth();
   const router = useRouter();
+  const approved = user?.approved !== false; // undefined (still loading) treated as ok
   const [products, setProducts] = useState(null);
-  const [cart, setCart] = useState({}); // productId → qty
+  const [cart, setCart] = useState({}); // productId → { qty, unit }
   const [open, setOpen] = useState(false);
   const [info, setInfo] = useState({ address: '', phone: '', note: '' });
   const [busy, setBusy] = useState(false);
@@ -35,21 +36,31 @@ export default function ShopPage() {
     }));
   }, [user]);
 
-  const add = (id, delta) =>
+  const unitsOf = (p) => (p.unitOptions?.length ? p.unitOptions : [p.unit]);
+
+  // round to 2 decimals, never below 0
+  const clean = (n) => Math.max(0, Math.round((Number(n) || 0) * 100) / 100);
+
+  const setQty = (p, qty) =>
     setCart((c) => {
-      const next = Math.max(0, Math.round(((c[id] || 0) + delta) * 10) / 10);
+      const next = clean(qty);
       const copy = { ...c };
-      if (next <= 0) delete copy[id];
-      else copy[id] = next;
+      if (next <= 0) delete copy[p._id];
+      else copy[p._id] = { qty: next, unit: c[p._id]?.unit || unitsOf(p)[0] };
       return copy;
     });
+
+  const bump = (p, delta) => setQty(p, (cart[p._id]?.qty || 0) + delta);
+
+  const setUnit = (p, unit) =>
+    setCart((c) => (c[p._id] ? { ...c, [p._id]: { ...c[p._id], unit } } : c));
 
   const cartItems = useMemo(() => {
     if (!products) return [];
     return Object.entries(cart)
-      .map(([id, qty]) => {
+      .map(([id, { qty, unit }]) => {
         const p = products.find((x) => x._id === id);
-        return p ? { ...p, qty, amount: qty * p.rate } : null;
+        return p ? { ...p, qty, unit, amount: qty * p.rate } : null;
       })
       .filter(Boolean);
   }, [cart, products]);
@@ -63,7 +74,7 @@ export default function ShopPage() {
       await api('/orders', {
         method: 'POST',
         body: {
-          items: cartItems.map((i) => ({ product: i._id, quantity: i.qty })),
+          items: cartItems.map((i) => ({ product: i._id, quantity: i.qty, unit: i.unit })),
           address: info.address,
           phone: info.phone,
           note: info.note,
@@ -86,6 +97,18 @@ export default function ShopPage() {
     <div className={count > 0 ? 'pb-24' : ''}>
       <PageHeader title="দোকান" desc="খাঁটি দুধ, দই, পনির, ঘি — আপনার জন্য নির্ধারিত দামে" />
 
+      {!approved && (
+        <div className="mb-5 flex items-start gap-3 rounded-xl2 bg-ghee-100 px-5 py-4 text-sm text-ghee-700 ring-1 ring-ghee-300/60">
+          <Clock className="mt-0.5 h-5 w-5 shrink-0" />
+          <div>
+            <p className="font-semibold text-leaf-900">আপনার অ্যাকাউন্ট অনুমোদনের অপেক্ষায়</p>
+            <p className="mt-0.5">
+              মালিক আপনার অ্যাকাউন্ট অনুমোদন করলেই অর্ডার করতে পারবেন। ততক্ষণ পর্যন্ত পণ্য ও দাম দেখে নিতে পারেন।
+            </p>
+          </div>
+        </div>
+      )}
+
       {products.length === 0 ? (
         <EmptyState
           icon={Store}
@@ -95,7 +118,10 @@ export default function ShopPage() {
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {products.map((p) => {
-            const qty = cart[p._id] || 0;
+            const item = cart[p._id];
+            const qty = item?.qty || 0;
+            const unit = item?.unit || unitsOf(p)[0];
+            const units = unitsOf(p);
             return (
               <Card key={p._id} className="overflow-hidden">
                 {p.image?.url ? (
@@ -108,30 +134,55 @@ export default function ShopPage() {
                 <div className="p-4">
                   <p className="font-display text-lg text-leaf-900">{p.name}</p>
                   {p.description && <p className="mt-0.5 line-clamp-2 text-xs text-stone-500">{p.description}</p>}
-                  <div className="mt-3 flex items-center justify-between">
+                  <div className="mt-3 flex items-center justify-between gap-2">
                     <p className="num font-semibold text-ghee-600">
                       {taka(p.rate)}
                       <span className="text-xs font-normal text-stone-400">/{p.unit}</span>
                     </p>
-                    {qty === 0 ? (
-                      <Button size="sm" onClick={() => add(p._id, 1)} className="gap-1.5">
-                        <Plus className="h-3.5 w-3.5" />
-                        যোগ করুন
-                      </Button>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => add(p._id, -1)}>
-                          <Minus className="h-3.5 w-3.5" />
-                        </Button>
-                        <span className="num min-w-[44px] text-center font-semibold text-leaf-900">
-                          {bn(qty)} {p.unit}
-                        </span>
-                        <Button variant="outline" size="icon" className="h-8 w-8" onClick={() => add(p._id, 1)}>
-                          <Plus className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
+                    {units.length > 1 && (
+                      <Select
+                        value={unit}
+                        onChange={(e) => setUnit(p, e.target.value)}
+                        className="h-8 w-auto py-0 text-xs"
+                      >
+                        {units.map((u) => (
+                          <option key={u} value={u}>
+                            {u}
+                          </option>
+                        ))}
+                      </Select>
                     )}
                   </div>
+
+                  {qty === 0 ? (
+                    <Button size="sm" onClick={() => bump(p, 1)} className="mt-3 w-full gap-1.5">
+                      <Plus className="h-3.5 w-3.5" />
+                      কার্টে যোগ করুন
+                    </Button>
+                  ) : (
+                    <div className="mt-3 flex items-center gap-2">
+                      <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={() => bump(p, -1)}>
+                        <Minus className="h-3.5 w-3.5" />
+                      </Button>
+                      <Input
+                        type="number"
+                        step="0.5"
+                        min="0"
+                        inputMode="decimal"
+                        value={qty}
+                        onChange={(e) => setQty(p, e.target.value)}
+                        className="h-9 w-full text-center num"
+                      />
+                      <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" onClick={() => bump(p, 1)}>
+                        <Plus className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  )}
+                  {qty > 0 && (
+                    <p className="mt-1.5 text-right text-xs text-stone-500">
+                      {bn(qty)} {unit} · <span className="num font-semibold text-leaf-700">{taka(qty * p.rate)}</span>
+                    </p>
+                  )}
                 </div>
               </Card>
             );
@@ -147,9 +198,16 @@ export default function ShopPage() {
               <p className="text-xs text-stone-500">{bn(count)}টি পণ্য</p>
               <p className="num font-display text-xl text-leaf-900">{taka(total)}</p>
             </div>
-            <Button variant="accent" size="lg" className="gap-2" onClick={() => setOpen(true)}>
+            <Button
+              variant="accent"
+              size="lg"
+              className="gap-2"
+              onClick={() => setOpen(true)}
+              disabled={!approved}
+              title={!approved ? 'অ্যাকাউন্ট অনুমোদনের পর অর্ডার করা যাবে' : undefined}
+            >
               <ShoppingBag className="h-4 w-4" />
-              অর্ডার করুন
+              {approved ? 'অর্ডার করুন' : 'অনুমোদনের অপেক্ষায়'}
             </Button>
           </div>
         </div>
@@ -194,7 +252,7 @@ export default function ShopPage() {
               <DialogClose asChild>
                 <Button variant="ghost">বাতিল</Button>
               </DialogClose>
-              <Button onClick={placeOrder} loading={busy} disabled={!info.address || !info.phone}>
+              <Button onClick={placeOrder} loading={busy} disabled={!info.address || !info.phone || !approved}>
                 অর্ডার দিন — {taka(total)}
               </Button>
             </div>

@@ -32,6 +32,10 @@ const CUSTOMER_NAV = [
   { href: '/account', label: 'আমার হিসাব', icon: Wallet },
 ];
 
+// Pages an employee (কর্মচারী) is blocked from: products, employees, settings, farms (rates/payments).
+const EMPLOYEE_HIDDEN = new Set(['/products', '/employees', '/settings', '/farms']);
+const ROLE_LABEL = { admin: 'মালিক', employee: 'কর্মচারী', customer: 'কাস্টমার' };
+
 function Brand() {
   return (
     <div className="flex items-center gap-3 px-2">
@@ -73,24 +77,30 @@ function NavLinks({ nav, onNavigate }) {
   );
 }
 
-function Shell({ nav, role, children }) {
+function Shell({ nav, roles, children }) {
   const { user, loading, logout } = useAuth();
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
+  const allowed = !!user && roles.includes(user.role);
+
   useEffect(() => {
-    if (!loading && (!user || user.role !== role)) {
+    if (!loading && !allowed) {
       router.replace('/login');
     }
-  }, [loading, user, role, router]);
+  }, [loading, allowed, router]);
 
-  if (loading || !user || user.role !== role) {
+  if (loading || !allowed) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-canvas">
         <PageLoader />
       </div>
     );
   }
+
+  // employees see a trimmed admin nav
+  const visibleNav =
+    user.role === 'employee' ? nav.filter((n) => !EMPLOYEE_HIDDEN.has(n.href)) : nav;
 
   const handleLogout = async () => {
     await logout();
@@ -100,10 +110,12 @@ function Shell({ nav, role, children }) {
   const sidebarInner = (onNavigate) => (
     <div className="flex h-full flex-col p-4">
       <Brand />
-      <NavLinks nav={nav} onNavigate={onNavigate} />
+      <NavLinks nav={visibleNav} onNavigate={onNavigate} />
       <div className="mt-auto rounded-xl bg-leaf-800/60 p-3">
         <p className="truncate text-sm font-semibold text-white">{user.name}</p>
-        <p className="truncate text-xs text-leaf-200/70">{user.phone}</p>
+        <p className="truncate text-xs text-leaf-200/70">
+          {user.phone} · {ROLE_LABEL[user.role] || ''}
+        </p>
         <button
           onClick={handleLogout}
           className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-leaf-900/70 px-3 py-2 text-xs font-medium text-leaf-100 hover:bg-leaf-900"
@@ -166,7 +178,7 @@ function Shell({ nav, role, children }) {
 
 export function AdminShell({ children }) {
   return (
-    <Shell nav={ADMIN_NAV} role="admin">
+    <Shell nav={ADMIN_NAV} roles={['admin', 'employee']}>
       {children}
     </Shell>
   );
@@ -174,7 +186,7 @@ export function AdminShell({ children }) {
 
 export function CustomerShell({ children }) {
   return (
-    <Shell nav={CUSTOMER_NAV} role="customer">
+    <Shell nav={CUSTOMER_NAV} roles={['customer']}>
       {children}
     </Shell>
   );

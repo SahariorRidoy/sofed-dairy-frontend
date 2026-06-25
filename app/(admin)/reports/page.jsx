@@ -12,53 +12,63 @@ import {
   Table, THead, TH, TR, TD, PageLoader, StatCard, Badge,
 } from '@/components/ui';
 
-/* one shift's reconciliation line */
-function ReconRow({ label, r }) {
+/* one shift's reconciliation line — full breakdown */
+function ReconRow({ label, r, strong }) {
   return (
-    <div className="grid grid-cols-[1fr_auto_auto_auto] items-center gap-3 py-2.5 text-sm">
-      <span className="font-medium text-leaf-900">{label}</span>
-      <span className="num text-right text-stone-600">{bn(r.collected)} কেজি</span>
-      <span className="num text-right text-stone-600">{bn(r.out)} কেজি</span>
-      <span
-        className={`num min-w-[90px] text-right font-semibold ${
-          r.extra > 0 ? 'text-leaf-700' : r.extra < 0 ? 'text-rose-600' : 'text-stone-500'
+    <TR className={strong ? 'bg-leaf-50/60' : ''}>
+      <TD className={strong ? 'font-display text-leaf-900' : 'font-medium text-leaf-900'}>{label}</TD>
+      <TD className="num text-right">{bn(r.collected)}</TD>
+      <TD className="num text-right">{bn(r.sold)}</TD>
+      <TD className="num text-right">{bn(r.productionMilk)}</TD>
+      <TD className="num text-right">{bn(r.home)}</TD>
+      <TD className="num text-right text-rose-600">{r.leak ? `−${bn(r.leak)}` : '০'}</TD>
+      <TD
+        className={`num text-right font-semibold ${
+          r.balance > 0 ? 'text-leaf-700' : r.balance < 0 ? 'text-rose-600' : 'text-stone-500'
         }`}
       >
-        {r.extra > 0 ? `+${bn(r.extra)}` : bn(r.extra)} কেজি
-      </span>
-    </div>
+        {r.balance > 0 ? `+${bn(r.balance)}` : bn(r.balance)}
+      </TD>
+    </TR>
   );
 }
 
 function DailyReport({ data }) {
+  const bal = data.recon.total.balance;
   return (
     <div className="space-y-6">
       {/* হিসাব মেলানো — the khata card */}
       <Card>
         <CardHeader>
-          <CardTitle>হিসাব মেলানো — {bnDate(data.date)}</CardTitle>
-          <Badge tone={data.recon.total.extra >= 0 ? 'leaf' : 'rose'}>
-            স্যাম্পল যোগ: {data.recon.total.extra > 0 ? '+' : ''}
-            {bn(data.recon.total.extra)} কেজি
+          <CardTitle>হিসাব মেলানো (দুধের ব্যালেন্স) — {bnDate(data.date)}</CardTitle>
+          <Badge tone={bal === 0 ? 'leaf' : bal > 0 ? 'ghee' : 'rose'}>
+            ব্যালেন্স: {bal > 0 ? '+' : ''}
+            {bn(bal)} কেজি
           </Badge>
         </CardHeader>
         <CardContent>
-          <div className="khata rounded-xl border border-leaf-100 px-4 pl-16">
-            <div className="grid grid-cols-[1fr_auto_auto_auto] gap-3 border-b border-leaf-100 py-2 text-[11px] font-semibold text-leaf-900/60">
-              <span>শিফট</span>
-              <span className="text-right">সংগ্রহ</span>
-              <span className="text-right">বিক্রি+ব্যবহার</span>
-              <span className="min-w-[90px] text-right">বেশি (স্যাম্পল)</span>
-            </div>
-            <ReconRow label={SHIFT_LABEL.morning} r={data.recon.morning} />
-            <ReconRow label={SHIFT_LABEL.afternoon} r={data.recon.afternoon} />
-            <div className="border-t-2 border-leaf-200">
-              <ReconRow label="সারাদিন" r={data.recon.total} />
-            </div>
-          </div>
+          <Table>
+            <THead>
+              <tr>
+                <TH>শিফট</TH>
+                <TH className="text-right">সংগ্রহ</TH>
+                <TH className="text-right">বিক্রি</TH>
+                <TH className="text-right">উৎপাদন</TH>
+                <TH className="text-right">ঘরের</TH>
+                <TH className="text-right">লিক/ফেরত</TH>
+                <TH className="text-right">ব্যালেন্স</TH>
+              </tr>
+            </THead>
+            <tbody>
+              <ReconRow label={SHIFT_LABEL.morning} r={data.recon.morning} />
+              <ReconRow label={SHIFT_LABEL.afternoon} r={data.recon.afternoon} />
+              <ReconRow label="সারাদিন" r={data.recon.total} strong />
+            </tbody>
+          </Table>
           <p className="mt-3 text-xs text-stone-400">
-            বিক্রি+ব্যবহার = দুধ বিক্রি (কেজি) + উৎপাদনে ব্যবহার + ঘরের দুধ − লিক/ফেরত। সংগ্রহের চেয়ে বেশি বেরোলে
-            সেটাই স্যাম্পল যোগে পাওয়া অতিরিক্ত দুধ।
+            ব্যালেন্স = সংগ্রহ − (বিক্রি + উৎপাদনে ব্যবহার + ঘরের দুধ − লিক/ফেরত)। শূন্যের কাছাকাছি হলে হিসাব মিলেছে;
+            ধনাত্মক হলে কিছু দুধ উদ্বৃত্ত/অহিসাবি, ঋণাত্মক হলে সংগ্রহের চেয়ে বেশি বেরিয়েছে (স্যাম্পল যোগ)।
+            {data.recon.online?.sold ? ` অনলাইন বিক্রি ${bn(data.recon.online.sold)} কেজি সারাদিনে ধরা হয়েছে।` : ''}
           </p>
         </CardContent>
       </Card>
@@ -238,6 +248,14 @@ function MonthlyReport({ data }) {
           value={`${bn(data.adjustments.homeKg)} / ${bn(data.adjustments.leakKg)} কেজি`}
           tone="stone"
         />
+        {data.recon && (
+          <StatCard
+            label="দুধের ব্যালেন্স"
+            value={`${data.recon.balance > 0 ? '+' : ''}${bn(data.recon.balance)} কেজি`}
+            sub={`সংগ্রহ ${bn(data.recon.collected)} − ব্যবহার ${bn(data.recon.out)}`}
+            tone={data.recon.balance === 0 ? 'leaf' : data.recon.balance > 0 ? 'ghee' : 'rose'}
+          />
+        )}
         <StatCard
           label="আনুমানিক লাভ (মোটা হিসাব)"
           value={taka(data.profitEstimate)}
@@ -359,8 +377,10 @@ export default function ReportsPage() {
   const [tab, setTab] = useState('daily');
   const [date, setDate] = useState(todayStr());
   const [month, setMonth] = useState(monthStr());
+  const [range, setRange] = useState({ from: monthStr() + '-01', to: todayStr() });
   const [daily, setDaily] = useState(null);
   const [monthly, setMonthly] = useState(null);
+  const [ranged, setRanged] = useState(null);
 
   useEffect(() => {
     setDaily(null);
@@ -376,14 +396,40 @@ export default function ReportsPage() {
       .catch((err) => toast.error(err.message));
   }, [month]);
 
+  useEffect(() => {
+    if (tab !== 'range' || !range.from || !range.to) return;
+    setRanged(null);
+    api(`/reports/range?from=${range.from}&to=${range.to}`)
+      .then(setRanged)
+      .catch((err) => toast.error(err.message));
+  }, [tab, range.from, range.to]);
+
   return (
     <div>
       <div className="no-print">
-        <PageHeader title="রিপোর্ট" desc="রাতের হিসাব মেলানো আর মাস শেষের পুরো চিত্র">
-          {tab === 'daily' ? (
+        <PageHeader title="রিপোর্ট" desc="রাতের হিসাব মেলানো, মাস শেষের চিত্র, আর যেকোনো তারিখের কাস্টম রিপোর্ট">
+          {tab === 'daily' && (
             <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="w-auto" />
-          ) : (
+          )}
+          {tab === 'monthly' && (
             <Input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="w-auto" />
+          )}
+          {tab === 'range' && (
+            <>
+              <Input
+                type="date"
+                value={range.from}
+                onChange={(e) => setRange((r) => ({ ...r, from: e.target.value }))}
+                className="w-auto"
+              />
+              <span className="text-stone-400">—</span>
+              <Input
+                type="date"
+                value={range.to}
+                onChange={(e) => setRange((r) => ({ ...r, to: e.target.value }))}
+                className="w-auto"
+              />
+            </>
           )}
           <Button variant="outline" className="gap-2" onClick={() => window.print()}>
             <Printer className="h-4 w-4" />
@@ -397,6 +443,7 @@ export default function ReportsPage() {
           items={[
             { value: 'daily', label: 'দৈনিক হিসাব' },
             { value: 'monthly', label: 'মাসিক রিপোর্ট' },
+            { value: 'range', label: 'কাস্টম তারিখ' },
           ]}
           className="mb-5"
         />
@@ -404,12 +451,19 @@ export default function ReportsPage() {
 
       <div id="print-area">
         <p className="mb-4 hidden font-display text-xl text-leaf-900 print:block">
-          সফেদ ডেইরি — {tab === 'daily' ? `দৈনিক হিসাব, ${bnDate(date)}` : `মাসিক রিপোর্ট, ${month}`}
+          সফেদ ডেইরি —{' '}
+          {tab === 'daily'
+            ? `দৈনিক হিসাব, ${bnDate(date)}`
+            : tab === 'monthly'
+            ? `মাসিক রিপোর্ট, ${month}`
+            : `${bnDate(range.from)} — ${bnDate(range.to)}`}
         </p>
         {tab === 'daily' ? (
           daily ? <DailyReport data={daily} /> : <PageLoader />
-        ) : monthly ? (
-          <MonthlyReport data={monthly} />
+        ) : tab === 'monthly' ? (
+          monthly ? <MonthlyReport data={monthly} /> : <PageLoader />
+        ) : ranged ? (
+          <MonthlyReport data={ranged} />
         ) : (
           <PageLoader />
         )}

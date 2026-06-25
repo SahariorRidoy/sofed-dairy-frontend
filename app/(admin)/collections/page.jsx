@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 import { Droplets, Trash2, Save } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { bn, taka, SHIFT_LABEL, todayStr } from '@/lib/utils';
 import {
   PageHeader, Card, CardHeader, CardTitle, CardContent, Button, Input,
@@ -11,6 +12,7 @@ import {
 } from '@/components/ui';
 
 export default function CollectionsPage() {
+  const { isAdmin } = useAuth();
   const [date, setDate] = useState(todayStr());
   const [shift, setShift] = useState('morning');
   const [farms, setFarms] = useState(null);
@@ -128,14 +130,18 @@ export default function CollectionsPage() {
                     <TR key={f._id}>
                       <TD className="font-medium text-leaf-900">{f.name}</TD>
                       <TD>
-                        <Input
-                          type="number"
-                          step="0.5"
-                          min="0"
-                          value={rate[f._id] ?? ''}
-                          onChange={(e) => setRate((m) => ({ ...m, [f._id]: e.target.value }))}
-                          className="h-9"
-                        />
+                        {isAdmin ? (
+                          <Input
+                            type="number"
+                            step="0.5"
+                            min="0"
+                            value={rate[f._id] ?? ''}
+                            onChange={(e) => setRate((m) => ({ ...m, [f._id]: e.target.value }))}
+                            className="h-9"
+                          />
+                        ) : (
+                          <span className="num text-stone-600">{taka(r)}</span>
+                        )}
                       </TD>
                       <TD>
                         <Input
@@ -184,7 +190,7 @@ export default function CollectionsPage() {
                   <TH className="text-right">দুধ</TH>
                   <TH className="text-right">দর</TH>
                   <TH className="text-right">দাম</TH>
-                  <TH className="w-12" />
+                  {isAdmin && <TH className="w-12" />}
                 </tr>
               </THead>
               <tbody>
@@ -195,11 +201,13 @@ export default function CollectionsPage() {
                     <TD className="num text-right">{bn(e.quantityKg)} কেজি</TD>
                     <TD className="num text-right">{taka(e.ratePerKg)}</TD>
                     <TD className="num text-right font-semibold">{taka(e.amount)}</TD>
-                    <TD>
-                      <Button variant="dangerGhost" size="icon" onClick={() => removeEntry(e._id)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TD>
+                    {isAdmin && (
+                      <TD>
+                        <Button variant="dangerGhost" size="icon" onClick={() => removeEntry(e._id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TD>
+                    )}
                   </TR>
                 ))}
               </tbody>

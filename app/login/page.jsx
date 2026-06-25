@@ -29,7 +29,7 @@ export default function LoginPage() {
     try {
       const user = await login(phone.trim(), password);
       toast.success(`স্বাগতম, ${user.name}!`);
-      router.replace(user.role === 'admin' ? '/dashboard' : '/shop');
+      router.replace(user.role === 'customer' ? '/shop' : '/dashboard');
     } catch (err) {
       toast.error(err.message);
       setBusy(false);

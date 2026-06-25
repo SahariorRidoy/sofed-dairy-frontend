@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Package, Plus, Pencil, ImagePlus } from 'lucide-react';
+import { Package, Plus, Pencil, ImagePlus, X } from 'lucide-react';
 import { api } from '@/lib/api';
 import { taka, CATEGORY_LABEL } from '@/lib/utils';
 import {
@@ -12,8 +12,9 @@ import {
 } from '@/components/ui';
 
 const CATEGORIES = Object.entries(CATEGORY_LABEL).map(([value, label]) => ({ value, label }));
+const COMMON_UNITS = ['৫০০ গ্রাম', '২৫০ গ্রাম', '৩০০ গ্রাম', 'লিটার', 'কাপ', 'পিস'];
 const emptyForm = {
-  name: '', category: 'milk', unit: 'কেজি', defaultRate: '', description: '',
+  name: '', category: 'milk', unit: 'কেজি', extraUnits: [], defaultRate: '', description: '',
   availableOnline: false, quickSale: false,
 };
 
@@ -21,8 +22,17 @@ export default function ProductsPage() {
   const [products, setProducts] = useState(null);
   const [editTarget, setEditTarget] = useState(null); // null | 'new' | product
   const [form, setForm] = useState(emptyForm);
+  const [unitInput, setUnitInput] = useState('');
   const [file, setFile] = useState(null);
   const [busy, setBusy] = useState(false);
+
+  const addUnit = (raw) => {
+    const u = String(raw || '').trim();
+    if (!u || u === form.unit || form.extraUnits.includes(u)) return;
+    setForm((f) => ({ ...f, extraUnits: [...f.extraUnits, u] }));
+    setUnitInput('');
+  };
+  const removeUnit = (u) => setForm((f) => ({ ...f, extraUnits: f.extraUnits.filter((x) => x !== u) }));
 
   const load = () =>
     api('/products?all=1')
@@ -35,14 +45,18 @@ export default function ProductsPage() {
 
   const openNew = () => {
     setForm(emptyForm);
+    setUnitInput('');
     setFile(null);
     setEditTarget('new');
   };
   const openEdit = (p) => {
     setForm({
-      name: p.name, category: p.category, unit: p.unit, defaultRate: p.defaultRate,
+      name: p.name, category: p.category, unit: p.unit,
+      extraUnits: (p.unitOptions || []).filter((u) => u !== p.unit),
+      defaultRate: p.defaultRate,
       description: p.description || '', availableOnline: p.availableOnline, quickSale: p.quickSale,
     });
+    setUnitInput('');
     setFile(null);
     setEditTarget(p);
   };
@@ -56,7 +70,13 @@ export default function ProductsPage() {
         fd.append('image', file);
         image = await api('/products/upload', { method: 'POST', body: fd });
       }
-      const body = { ...form, defaultRate: Number(form.defaultRate), ...(image ? { image } : {}) };
+      const { extraUnits, ...rest } = form;
+      const body = {
+        ...rest,
+        unitOptions: [form.unit, ...extraUnits],
+        defaultRate: Number(form.defaultRate),
+        ...(image ? { image } : {}),
+      };
       if (editTarget === 'new') {
         await api('/products', { method: 'POST', body });
         toast.success('পণ্য যোগ হয়েছে');
@@ -162,7 +182,7 @@ export default function ProductsPage() {
                   ))}
                 </Select>
               </Field>
-              <Field label="একক">
+              <Field label="মূল একক (দাম এই এককে)">
                 <Select value={form.unit} onChange={(e) => setForm((f) => ({ ...f, unit: e.target.value }))}>
                   {['কেজি', 'লিটার', 'কাপ', 'পিস'].map((u) => (
                     <option key={u} value={u}>
@@ -172,6 +192,48 @@ export default function ProductsPage() {
                 </Select>
               </Field>
             </div>
+
+            <Field label="অন্যান্য একক (যেমন: ৫০০ গ্রাম, ৩০০ গ্রাম — অর্ডার/বিক্রিতে বেছে নেওয়া যাবে)">
+              <div className="flex flex-wrap gap-1.5">
+                <Badge tone="leaf">{form.unit} <span className="text-leaf-600/70">(মূল)</span></Badge>
+                {form.extraUnits.map((u) => (
+                  <span key={u} className="inline-flex items-center gap-1 rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-semibold text-stone-600">
+                    {u}
+                    <button type="button" onClick={() => removeUnit(u)} className="text-stone-400 hover:text-rose-500">
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+              <div className="mt-2 flex gap-2">
+                <Input
+                  value={unitInput}
+                  onChange={(e) => setUnitInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      addUnit(unitInput);
+                    }
+                  }}
+                  placeholder="নতুন একক লিখে Enter চাপুন"
+                  className="flex-1"
+                />
+                <Button type="button" variant="outline" onClick={() => addUnit(unitInput)}>যোগ</Button>
+              </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {COMMON_UNITS.filter((u) => u !== form.unit && !form.extraUnits.includes(u)).map((u) => (
+                  <button
+                    key={u}
+                    type="button"
+                    onClick={() => addUnit(u)}
+                    className="rounded-full border border-dashed border-leaf-300 px-2.5 py-0.5 text-xs text-leaf-700 hover:bg-leaf-50"
+                  >
+                    + {u}
+                  </button>
+                ))}
+              </div>
+            </Field>
+
             <Field label="সাধারণ দাম (৳)">
               <Input
                 type="number"

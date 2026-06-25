@@ -4,18 +4,24 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { FlaskConical, Trash2, Home, PackageX } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { bn, taka, bnDate, todayStr, monthStr, SHIFTS, SHIFT_LABEL, PRODUCTION_TYPES, PRODUCTION_LABEL } from '@/lib/utils';
 import {
   PageHeader, Card, CardHeader, CardTitle, CardContent, Button, Input, Field, Select, Tabs,
-  Table, THead, TH, TR, TD, Badge,
+  Table, THead, TH, TR, TD, Badge, Pagination,
 } from '@/components/ui';
 
+const emptyPage = { rows: [], page: 1, pages: 1, total: 0 };
+
 export default function ProductionPage() {
+  const { isAdmin } = useAuth();
   const [tab, setTab] = useState('production');
   const [month, setMonth] = useState(monthStr());
 
-  const [prodRows, setProdRows] = useState([]);
-  const [adjRows, setAdjRows] = useState([]);
+  const [prodData, setProdData] = useState(emptyPage);
+  const [adjData, setAdjData] = useState(emptyPage);
+  const [prodPage, setProdPage] = useState(1);
+  const [adjPage, setAdjPage] = useState(1);
 
   const [prodForm, setProdForm] = useState({
     date: todayStr(), shift: 'morning', type: 'mishti_doi', milkUsedKg: '', outputQty: '', outputUnit: 'লিটার', note: '',
@@ -25,17 +31,30 @@ export default function ProductionPage() {
   });
   const [busy, setBusy] = useState(false);
 
-  const load = (m) =>
-    Promise.all([api(`/production?month=${m}`), api(`/adjustments?month=${m}`)])
-      .then(([p, a]) => {
-        setProdRows(p);
-        setAdjRows(a);
-      })
+  const loadProd = () =>
+    api(`/production?month=${month}&page=${prodPage}`)
+      .then(setProdData)
+      .catch((err) => toast.error(err.message));
+  const loadAdj = () =>
+    api(`/adjustments?month=${month}&page=${adjPage}`)
+      .then(setAdjData)
       .catch((err) => toast.error(err.message));
 
+  // reset to first page when the month changes
   useEffect(() => {
-    load(month);
+    setProdPage(1);
+    setAdjPage(1);
   }, [month]);
+
+  useEffect(() => {
+    loadProd();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [month, prodPage]);
+
+  useEffect(() => {
+    loadAdj();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [month, adjPage]);
 
   const saveProduction = async () => {
     setBusy(true);
@@ -50,7 +69,8 @@ export default function ProductionPage() {
       });
       toast.success('উৎপাদন এন্ট্রি সেভ হয়েছে');
       setProdForm((f) => ({ ...f, milkUsedKg: '', outputQty: '', note: '' }));
-      load(month);
+      if (prodPage === 1) loadProd();
+      else setProdPage(1);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -67,7 +87,8 @@ export default function ProductionPage() {
       });
       toast.success('এন্ট্রি সেভ হয়েছে');
       setAdjForm((f) => ({ ...f, quantityKg: '', note: '' }));
-      load(month);
+      if (adjPage === 1) loadAdj();
+      else setAdjPage(1);
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -79,7 +100,8 @@ export default function ProductionPage() {
     try {
       await api(`/${kind}/${id}`, { method: 'DELETE' });
       toast.success('মুছে ফেলা হয়েছে');
-      load(month);
+      if (kind === 'production') loadProd();
+      else loadAdj();
     } catch (err) {
       toast.error(err.message);
     }
@@ -164,42 +186,47 @@ export default function ProductionPage() {
 
           <Card className="mt-6">
             <CardHeader>
-              <CardTitle>এই মাসের উৎপাদন ({bn(prodRows.length)}টি)</CardTitle>
+              <CardTitle>এই মাসের উৎপাদন ({bn(prodData.total)}টি)</CardTitle>
             </CardHeader>
             <CardContent>
-              {prodRows.length === 0 ? (
+              {prodData.rows.length === 0 ? (
                 <p className="py-4 text-center text-sm text-stone-400">এই মাসে কোনো এন্ট্রি নেই</p>
               ) : (
-                <Table>
-                  <THead>
-                    <tr>
-                      <TH>তারিখ</TH>
-                      <TH>শিফট</TH>
-                      <TH>পণ্য</TH>
-                      <TH className="text-right">দুধ লেগেছে</TH>
-                      <TH className="text-right">তৈরি হয়েছে</TH>
-                      <TH>নোট</TH>
-                      <TH className="w-12" />
-                    </tr>
-                  </THead>
-                  <tbody>
-                    {prodRows.map((r) => (
-                      <TR key={r._id}>
-                        <TD>{bnDate(r.date)}</TD>
-                        <TD>{SHIFT_LABEL[r.shift]}</TD>
-                        <TD className="font-medium text-leaf-900">{PRODUCTION_LABEL[r.type]}</TD>
-                        <TD className="num text-right">{bn(r.milkUsedKg)} কেজি</TD>
-                        <TD className="num text-right">{r.outputQty ? `${bn(r.outputQty)} ${r.outputUnit}` : '—'}</TD>
-                        <TD className="max-w-[180px] truncate text-stone-500">{r.note || '—'}</TD>
-                        <TD>
-                          <Button variant="dangerGhost" size="icon" onClick={() => removeRow('production', r._id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TD>
-                      </TR>
-                    ))}
-                  </tbody>
-                </Table>
+                <>
+                  <Table>
+                    <THead>
+                      <tr>
+                        <TH>তারিখ</TH>
+                        <TH>শিফট</TH>
+                        <TH>পণ্য</TH>
+                        <TH className="text-right">দুধ লেগেছে</TH>
+                        <TH className="text-right">তৈরি হয়েছে</TH>
+                        <TH>নোট</TH>
+                        {isAdmin && <TH className="w-12" />}
+                      </tr>
+                    </THead>
+                    <tbody>
+                      {prodData.rows.map((r) => (
+                        <TR key={r._id}>
+                          <TD>{bnDate(r.date)}</TD>
+                          <TD>{SHIFT_LABEL[r.shift]}</TD>
+                          <TD className="font-medium text-leaf-900">{PRODUCTION_LABEL[r.type]}</TD>
+                          <TD className="num text-right">{bn(r.milkUsedKg)} কেজি</TD>
+                          <TD className="num text-right">{r.outputQty ? `${bn(r.outputQty)} ${r.outputUnit}` : '—'}</TD>
+                          <TD className="max-w-[180px] truncate text-stone-500">{r.note || '—'}</TD>
+                          {isAdmin && (
+                            <TD>
+                              <Button variant="dangerGhost" size="icon" onClick={() => removeRow('production', r._id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TD>
+                          )}
+                        </TR>
+                      ))}
+                    </tbody>
+                  </Table>
+                  <Pagination page={prodData.page} pages={prodData.pages} total={prodData.total} onPage={setProdPage} />
+                </>
               )}
             </CardContent>
           </Card>
@@ -252,46 +279,51 @@ export default function ProductionPage() {
 
           <Card className="mt-6">
             <CardHeader>
-              <CardTitle>এই মাসের এন্ট্রি ({bn(adjRows.length)}টি)</CardTitle>
+              <CardTitle>এই মাসের এন্ট্রি ({bn(adjData.total)}টি)</CardTitle>
             </CardHeader>
             <CardContent>
-              {adjRows.length === 0 ? (
+              {adjData.rows.length === 0 ? (
                 <p className="py-4 text-center text-sm text-stone-400">এই মাসে কোনো এন্ট্রি নেই</p>
               ) : (
-                <Table>
-                  <THead>
-                    <tr>
-                      <TH>তারিখ</TH>
-                      <TH>শিফট</TH>
-                      <TH>ধরন</TH>
-                      <TH className="text-right">পরিমাণ</TH>
-                      <TH>নোট</TH>
-                      <TH className="w-12" />
-                    </tr>
-                  </THead>
-                  <tbody>
-                    {adjRows.map((r) => (
-                      <TR key={r._id}>
-                        <TD>{bnDate(r.date)}</TD>
-                        <TD>{SHIFT_LABEL[r.shift]}</TD>
-                        <TD>
-                          {r.type === 'home' ? (
-                            <Badge tone="leaf"><Home className="h-3 w-3" /> ঘরের দুধ</Badge>
-                          ) : (
-                            <Badge tone="rose"><PackageX className="h-3 w-3" /> লিক/ফেরত</Badge>
+                <>
+                  <Table>
+                    <THead>
+                      <tr>
+                        <TH>তারিখ</TH>
+                        <TH>শিফট</TH>
+                        <TH>ধরন</TH>
+                        <TH className="text-right">পরিমাণ</TH>
+                        <TH>নোট</TH>
+                        {isAdmin && <TH className="w-12" />}
+                      </tr>
+                    </THead>
+                    <tbody>
+                      {adjData.rows.map((r) => (
+                        <TR key={r._id}>
+                          <TD>{bnDate(r.date)}</TD>
+                          <TD>{SHIFT_LABEL[r.shift]}</TD>
+                          <TD>
+                            {r.type === 'home' ? (
+                              <Badge tone="leaf"><Home className="h-3 w-3" /> ঘরের দুধ</Badge>
+                            ) : (
+                              <Badge tone="rose"><PackageX className="h-3 w-3" /> লিক/ফেরত</Badge>
+                            )}
+                          </TD>
+                          <TD className="num text-right">{bn(r.quantityKg)} কেজি</TD>
+                          <TD className="max-w-[200px] truncate text-stone-500">{r.note || '—'}</TD>
+                          {isAdmin && (
+                            <TD>
+                              <Button variant="dangerGhost" size="icon" onClick={() => removeRow('adjustments', r._id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TD>
                           )}
-                        </TD>
-                        <TD className="num text-right">{bn(r.quantityKg)} কেজি</TD>
-                        <TD className="max-w-[200px] truncate text-stone-500">{r.note || '—'}</TD>
-                        <TD>
-                          <Button variant="dangerGhost" size="icon" onClick={() => removeRow('adjustments', r._id)}>
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </TD>
-                      </TR>
-                    ))}
-                  </tbody>
-                </Table>
+                        </TR>
+                      ))}
+                    </tbody>
+                  </Table>
+                  <Pagination page={adjData.page} pages={adjData.pages} total={adjData.total} onPage={setAdjPage} />
+                </>
               )}
             </CardContent>
           </Card>
